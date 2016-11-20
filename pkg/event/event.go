@@ -18,6 +18,7 @@ package event
 
 import (
 	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/apis/extensions"
 )
 
 // Event represent an event got from k8s api server
@@ -62,6 +63,18 @@ func New(obj interface{}, action string) Event {
 		reason = action
 		status = m[action]
 		name = apiRC.Name
+	}  else if apiDep, ok := obj.(*extensions.Deployment); ok {
+		name = apiDep.TypeMeta.Kind
+		kind = "deployment"
+		reason = action
+		status = m[action]
+		name = apiDep.Name
+	}  else if apiTpr, ok := obj.(*extensions.ThirdPartyResource); ok {
+		name = apiTpr.TypeMeta.Kind
+		kind = "third party resource"
+		reason = action
+		status = m[action]
+		name = apiTpr.Name
 	}
 
 	kbEvent := Event{

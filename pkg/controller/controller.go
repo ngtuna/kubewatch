@@ -30,6 +30,9 @@ import (
 	"k8s.io/kubernetes/pkg/fields"
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/util/wait"
+	"k8s.io/kubernetes/pkg/runtime"
+	"k8s.io/kubernetes/pkg/watch"
+	"k8s.io/kubernetes/pkg/apis/extensions"
 )
 
 func Controller(conf *config.Config, eventHandler handlers.Handler) {
@@ -57,7 +60,69 @@ func Controller(conf *config.Config, eventHandler handlers.Handler) {
 		rcStore = watchReplicationControllers(kubeClient, rcStore, eventHandler)
 	}
 
+	if conf.Resource.Deployment {
+		var depStore cache.Store
+		depStore = watchDeployments(kubeClient, depStore, eventHandler)
+	}
+
+	if conf.Resource.ReplicaSet {
+		var tprStore cache.Store
+		tprStore = watchThirdPartyResources(kubeClient, tprStore, eventHandler)
+	}
+
 	logrus.Fatal(http.ListenAndServe(":8081", nil))
+}
+
+func watchDeployments(client *client.Client, store cache.Store, eventHandler handlers.Handler) cache.Store {
+	resyncPeriod := 30 * time.Minute
+	eStore, eController := framework.NewIndexerInformer(
+		&cache.ListWatch{
+			ListFunc: func(options api.ListOptions) (runtime.Object, error) {
+				return client.Extensions().Deployments(api.NamespaceAll).List(options)
+			},
+			WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+				return client.Extensions().Deployments(api.NamespaceAll).Watch(options)
+			},
+		},
+		&extensions.Deployment{},
+		resyncPeriod,
+		framework.ResourceEventHandlerFuncs{
+			AddFunc:    eventHandler.ObjectCreated,
+			UpdateFunc: eventHandler.ObjectUpdated,
+			DeleteFunc: eventHandler.ObjectDeleted,
+		},
+		cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
+	)
+
+	go eController.Run(wait.NeverStop)
+
+	return eStore
+}
+
+func watchThirdPartyResources(client *client.Client, store cache.Store, eventHandler handlers.Handler) cache.Store {
+	resyncPeriod := 30 * time.Minute
+	eStore, eController := framework.NewIndexerInformer(
+		&cache.ListWatch{
+			ListFunc: func(options api.ListOptions) (runtime.Object, error) {
+				return client.Extensions().ThirdPartyResources().List(options)
+			},
+			WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+				return client.Extensions().ThirdPartyResources().Watch(options)
+			},
+		},
+		&extensions.ThirdPartyResource{},
+		resyncPeriod,
+		framework.ResourceEventHandlerFuncs{
+			AddFunc:    eventHandler.ObjectCreated,
+			UpdateFunc: eventHandler.ObjectUpdated,
+			DeleteFunc: eventHandler.ObjectDeleted,
+		},
+		cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
+	)
+
+	go eController.Run(wait.NeverStop)
+
+	return eStore
 }
 
 func watchPods(client *client.Client, store cache.Store, eventHandler handlers.Handler) cache.Store {
@@ -74,6 +139,7 @@ func watchPods(client *client.Client, store cache.Store, eventHandler handlers.H
 		framework.ResourceEventHandlerFuncs{
 			AddFunc:    eventHandler.ObjectCreated,
 			DeleteFunc: eventHandler.ObjectDeleted,
+			UpdateFunc: eventHandler.ObjectUpdated,
 		},
 	)
 
@@ -121,6 +187,7 @@ func watchReplicationControllers(client *client.Client, store cache.Store, event
 		framework.ResourceEventHandlerFuncs{
 			AddFunc:    eventHandler.ObjectCreated,
 			DeleteFunc: eventHandler.ObjectDeleted,
+			UpdateFunc: eventHandler.ObjectUpdated,
 		},
 	)
 

@@ -119,6 +119,8 @@ func prepareSlackAttachment(e event.Event) slack.Attachment {
 		e.Name,
 	)
 
+	fmt.Println(msg)
+
 	attachment := slack.Attachment{
 		Fields: []slack.AttachmentField{
 			slack.AttachmentField{
